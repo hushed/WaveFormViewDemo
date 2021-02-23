@@ -243,42 +243,48 @@ class WaveFormData private constructor(
         val stream = ByteArrayOutputStream(512)
         val info = MediaCodec.BufferInfo()
 
-        while (!eos) {
-          val inputBufferId = codec.dequeueInputBuffer(10)
-          if (inputBufferId >= 0) {
-            val inputBuffer = codec.getInputBuffer(inputBufferId)
-            if (inputBuffer == null) {
-              callback.onFailed(
+        try {
+          while (!eos) {
+            val inputBufferId = codec.dequeueInputBuffer(10)
+            if (inputBufferId >= 0) {
+              val inputBuffer = codec.getInputBuffer(inputBufferId)
+              if (inputBuffer == null) {
+                callback.onFailed(
                   RuntimeException("codec.getInputBuffer(inputBufferId) returned null")
-              )
-              return@launch
-            }
+                )
+                return@launch
+              }
 
-            val readSize = extractor.readSampleData(inputBuffer, 0)
-            extractor.advance()
-            codec.queueInputBuffer(
+              val readSize = extractor.readSampleData(inputBuffer, 0)
+              extractor.advance()
+              codec.queueInputBuffer(
                 inputBufferId, 0, if (readSize > 0) readSize else 0, extractor.sampleTime,
                 if (readSize > 0) 0 else MediaCodec.BUFFER_FLAG_END_OF_STREAM
-            )
-          }
-
-          val outputBufferId = codec.dequeueOutputBuffer(info, 10)
-          if (outputBufferId >= 0) {
-            val outputBuffer = codec.getOutputBuffer(outputBufferId)
-            if (outputBuffer == null) {
-              callback.onFailed(
-                  RuntimeException("codec.getOutputBuffer(outputBufferId) returned null")
               )
-              return@launch
             }
 
-            val buffer = ByteArray(outputBuffer.remaining())
-            outputBuffer.get(buffer)
-            stream.write(buffer)
-            codec.releaseOutputBuffer(outputBufferId, false)
-            if (info.flags == MediaCodec.BUFFER_FLAG_END_OF_STREAM) {
-              eos = true
+            val outputBufferId = codec.dequeueOutputBuffer(info, 10)
+            if (outputBufferId >= 0) {
+              val outputBuffer = codec.getOutputBuffer(outputBufferId)
+              if (outputBuffer == null) {
+                callback.onFailed(
+                  RuntimeException("codec.getOutputBuffer(outputBufferId) returned null")
+                )
+                return@launch
+              }
+
+              val buffer = ByteArray(outputBuffer.remaining())
+              outputBuffer.get(buffer)
+              stream.write(buffer)
+              codec.releaseOutputBuffer(outputBufferId, false)
+              if (info.flags == MediaCodec.BUFFER_FLAG_END_OF_STREAM) {
+                eos = true
+              }
             }
+          }
+        } catch (e: Exception){
+          withContext(Dispatchers.Main) {
+            callback.onFailed(e)
           }
         }
         codec.stop()
